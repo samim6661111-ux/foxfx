@@ -1,0 +1,60 @@
+name: train-foxfx
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_images:
+        description: "Teacher images (CPU is slow: ~1 min/image). 0 = all"
+        default: "100"
+      sd_steps:
+        description: "Stable Diffusion steps"
+        default: "20"
+      student_steps:
+        description: "Student training steps"
+        default: "3000"
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    env:
+      SHOTS: shots
+      PAIRS: pairs
+      OUT: out
+      MAX_IMAGES: ${{ inputs.max_images }}
+      SD_STEPS: ${{ inputs.sd_steps }}
+      STUDENT_STEPS: ${{ inputs.student_steps }}
+      HF_HOME: ${{ github.workspace }}/.hf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install diffusers transformers accelerate safetensors onnx onnxruntime pillow numpy
+      - name: Cache models and pairs
+        uses: actions/cache@v4
+        with:
+          path: |
+            .hf
+            pairs
+          key: foxfx-${{ hashFiles('train_foxfx.py') }}-${{ inputs.max_images }}-${{ inputs.sd_steps }}
+          restore-keys: foxfx-
+      - name: Teacher
+        run: python train_foxfx.py teacher
+      - name: Student
+        run: python train_foxfx.py student
+      - name: Preview
+        run: python train_foxfx.py preview
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: foxfx-output
+          path: |
+            out/fox_net.onnx
+            out/fox_net.pt
+            out/preview.png
+            pairs/*_out.png
